@@ -1,0 +1,2519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+<title>SketchIT — Trace Anything</title>
+<meta name="theme-color" content="#6c5ce7">
+<meta name="description" content="SketchIT — AR drawing, projection tracking, and interactive creativity.">
+
+<!-- ================= PWA MANIFEST ================= -->
+<link rel="manifest" id="manifestLink">
+
+<!-- ================= FONTS ================= -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<!-- ================= ICONS (Font Awesome 6) ================= -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+<style>
+/* ======================================================================
+   DESIGN TOKENS
+   Palette: base #0a0a0a (near-black studio), surface glass rgba(255,255,255,.06),
+   accent violet #6c5ce7 (from spec), accent warm #ff7edb (secondary highlight),
+   accent lime #b6ff6c (success/record), danger #ff5470.
+   Type: Space Grotesk (display/headers, technical/tool voice) + Inter (UI/body)
+   + JetBrains Mono (numeric/meta data — coordinates, timestamps).
+   Signature: layered "tracing glass" panels — bottom bar & cards read as
+   physical panes of glass stacked over the canvas, with a refracted top edge.
+   ====================================================================== */
+:root {
+  --bg-0: #08080b;
+  --bg-1: #0e0e13;
+  --bg-2: #131319;
+  --glass-fill: rgba(255, 255, 255, 0.055);
+  --glass-fill-strong: rgba(255, 255, 255, 0.09);
+  --glass-border: rgba(255, 255, 255, 0.11);
+  --glass-border-hi: rgba(255, 255, 255, 0.22);
+  --text-0: #f4f3f7;
+  --text-1: #b9b6c6;
+  --text-2: #7c7889;
+  --accent: #6c5ce7;
+  --accent-hi: #8b7dff;
+  --accent-soft: rgba(108, 92, 231, 0.18);
+  --pink: #ff7edb;
+  --lime: #b6ff6c;
+  --danger: #ff5470;
+  --danger-soft: rgba(255, 84, 112, 0.16);
+  --radius-l: 26px;
+  --radius-m: 18px;
+  --radius-s: 12px;
+  --font-display: 'Space Grotesk', sans-serif;
+  --font-body: 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --ease: cubic-bezier(.22, .9, .32, 1);
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overscroll-behavior: none;
+}
+body {
+  font-family: var(--font-body);
+  background:
+    radial-gradient(1200px 600px at 15% -10%, rgba(108, 92, 231, 0.16), transparent 60%),
+    radial-gradient(900px 500px at 110% 10%, rgba(255, 126, 219, 0.08), transparent 55%),
+    var(--bg-0);
+  color: var(--text-0);
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  -webkit-font-smoothing: antialiased;
+}
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+#app {
+  width: 100%;
+  max-width: 560px;
+  min-height: 100vh;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 12%);
+}
+
+::selection {
+  background: var(--accent-soft);
+}
+button {
+  font-family: inherit;
+}
+a {
+  color: inherit;
+}
+:focus-visible {
+  outline: 2px solid var(--accent-hi);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+/* ---------- utility: glass surface ---------- */
+.glass {
+  background: var(--glass-fill);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 20px 40px -20px rgba(0, 0, 0, 0.6);
+}
+
+/* ================= TOP APP BAR ================= */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: max(16px, env(safe-area-inset-top)) 18px 14px;
+  background: linear-gradient(180deg, rgba(8, 8, 11, 0.9), rgba(8, 8, 11, 0.55) 70%, transparent);
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.brand-mark {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--accent), var(--pink));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 18px -4px rgba(108, 92, 231, 0.7);
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.brand-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.brand-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+}
+.brand-text .name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 18px;
+  letter-spacing: -0.01em;
+}
+.brand-text .tag {
+  font-size: 10.5px;
+  color: var(--text-2);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  font-family: var(--font-mono);
+}
+.icon-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-fill);
+  color: var(--text-0);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform .25s var(--ease), background .25s, border-color .25s;
+}
+.icon-btn:hover {
+  background: var(--glass-fill-strong);
+  border-color: var(--glass-border-hi);
+}
+.icon-btn:active {
+  transform: scale(.9);
+}
+.icon-btn.spin i {
+  transition: transform .5s var(--ease);
+}
+.icon-btn.spin:active i {
+  transform: rotate(90deg);
+}
+
+/* ================= CONTENT ================= */
+.content {
+  flex: 1;
+  padding: 4px 18px 110px;
+  position: relative;
+}
+.view {
+  display: none;
+  animation: viewIn .38s var(--ease);
+}
+.view.active {
+  display: block;
+}
+@keyframes viewIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.section-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  margin: 22px 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.section-eyebrow::before {
+  content: '';
+  width: 14px;
+  height: 1px;
+  background: var(--glass-border-hi);
+}
+
+/* ---------- Home ---------- */
+.hero-card {
+  border-radius: var(--radius-l);
+  padding: 26px 22px 24px;
+  position: relative;
+  overflow: hidden;
+  margin-top: 8px;
+}
+.hero-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, rgba(108, 92, 231, 0.22), transparent 55%);
+  pointer-events: none;
+}
+.hero-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--pink);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.hero-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 26px;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  margin: 0 0 8px;
+}
+.hero-sub {
+  color: var(--text-1);
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 0 0 20px;
+  max-width: 34ch;
+}
+.btn {
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 14.5px;
+  border-radius: 14px;
+  padding: 13px 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  transition: transform .2s var(--ease), box-shadow .2s var(--ease), filter .2s;
+}
+.btn:active {
+  transform: scale(.96);
+}
+.btn-primary {
+  background: linear-gradient(135deg, var(--accent), #9376ff);
+  color: #fff;
+  box-shadow: 0 10px 26px -10px rgba(108, 92, 231, 0.8);
+}
+.btn-primary:hover {
+  filter: brightness(1.08);
+}
+.btn-ghost {
+  background: var(--glass-fill);
+  color: var(--text-0);
+  border: 1px solid var(--glass-border);
+}
+.btn-ghost:hover {
+  background: var(--glass-fill-strong);
+}
+.btn-danger {
+  background: var(--danger-soft);
+  color: #ffb3c0;
+  border: 1px solid rgba(255, 84, 112, 0.35);
+}
+.btn-block {
+  width: 100%;
+  justify-content: center;
+}
+.btn-sm {
+  padding: 9px 14px;
+  font-size: 13px;
+  border-radius: 11px;
+}
+
+.dropzone {
+  margin-top: 22px;
+  border: 1.5px dashed var(--glass-border-hi);
+  border-radius: var(--radius-m);
+  padding: 26px 16px;
+  text-align: center;
+  color: var(--text-1);
+  transition: border-color .25s, background .25s, transform .25s var(--ease);
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.02);
+}
+.dropzone.drag-over {
+  border-color: var(--accent-hi);
+  background: var(--accent-soft);
+  transform: scale(1.01);
+}
+.dropzone i {
+  font-size: 22px;
+  color: var(--accent-hi);
+  margin-bottom: 8px;
+  display: block;
+}
+.dropzone .dz-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-0);
+}
+.dropzone .dz-sub {
+  font-size: 12px;
+  color: var(--text-2);
+  margin-top: 2px;
+}
+.dropzone input {
+  display: none;
+}
+.dz-preview {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.dz-preview img {
+  width: 46px;
+  height: 46px;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid var(--glass-border);
+}
+.dz-preview .dz-file-name {
+  font-size: 12.5px;
+  color: var(--text-1);
+}
+
+/* ---------- Skeletons ---------- */
+.skeleton-card {
+  border-radius: var(--radius-m);
+  padding: 14px;
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.sk-block {
+  border-radius: 10px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.05) 25%, rgba(255, 255, 255, 0.12) 37%, rgba(255, 255, 255, 0.05) 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+}
+@keyframes shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+.sk-thumb {
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+}
+.sk-lines {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sk-line {
+  height: 11px;
+}
+.sk-line.w60 {
+  width: 60%;
+}
+.sk-line.w35 {
+  width: 35%;
+}
+
+/* ---------- Project cards ---------- */
+.project-card-wrap {
+  position: relative;
+  margin-bottom: 12px;
+  overflow: hidden;
+  border-radius: var(--radius-m);
+}
+.swipe-action {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 26px;
+  background: linear-gradient(90deg, transparent, var(--danger-soft) 40%, rgba(255, 84, 112, 0.35));
+  color: #ffd7de;
+  font-size: 20px;
+}
+.project-card {
+  position: relative;
+  z-index: 1;
+  border-radius: var(--radius-m);
+  padding: 14px;
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  transition: transform .28s var(--ease);
+  touch-action: pan-y;
+}
+.project-thumb {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  flex-shrink: 0;
+  object-fit: cover;
+  background: var(--bg-2);
+  border: 1px solid var(--glass-border);
+}
+.project-info {
+  flex: 1;
+  min-width: 0;
+}
+.project-name {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 15px;
+  margin: 0 0 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.project-meta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-2);
+}
+.project-chevron {
+  color: var(--text-2);
+  font-size: 14px;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 50px 20px;
+  color: var(--text-1);
+}
+.empty-state i {
+  font-size: 34px;
+  color: var(--accent-hi);
+  margin-bottom: 14px;
+  display: block;
+  animation: floatIcon 3s ease-in-out infinite;
+}
+@keyframes floatIcon {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+.empty-state .es-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 16px;
+  color: var(--text-0);
+  margin-bottom: 4px;
+}
+.empty-state .es-sub {
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+/* ---------- Settings ---------- */
+.settings-group {
+  border-radius: var(--radius-m);
+  overflow: hidden;
+  margin-bottom: 18px;
+}
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 16px;
+  border-bottom: 1px solid var(--glass-border);
+  cursor: pointer;
+}
+.settings-row:last-child {
+  border-bottom: none;
+}
+.settings-row:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+.settings-row-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.settings-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-soft);
+  color: var(--accent-hi);
+  flex-shrink: 0;
+  font-size: 14px;
+}
+.settings-row-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+.settings-row-sub {
+  font-size: 12px;
+  color: var(--text-2);
+  margin-top: 1px;
+}
+
+.switch {
+  position: relative;
+  width: 46px;
+  height: 27px;
+  flex-shrink: 0;
+}
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+.switch .track {
+  position: absolute;
+  inset: 0;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.14);
+  transition: background .25s var(--ease);
+  border: 1px solid var(--glass-border);
+}
+.switch .thumb {
+  position: absolute;
+  top: 2.5px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform .25s var(--ease);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+.switch input:checked+.track {
+  background: linear-gradient(135deg, var(--accent), var(--pink));
+}
+.switch input:checked+.track .thumb {
+  transform: translateX(19px);
+}
+
+.about-block {
+  text-align: center;
+  padding: 26px 10px 10px;
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+.about-block a {
+  color: var(--accent-hi);
+  font-weight: 600;
+  text-decoration: none;
+}
+.about-block a:hover {
+  text-decoration: underline;
+}
+
+/* ================= BOTTOM TAB BAR (signature glass pane) ================= */
+.tabbar-wrap {
+  position: fixed;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 560px;
+  z-index: 50;
+  padding: 0 14px max(14px, env(safe-area-inset-bottom));
+  pointer-events: none;
+}
+.tabbar {
+  pointer-events: auto;
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  border-radius: 22px;
+  padding: 9px 10px;
+  position: relative;
+  border: 1px solid var(--glass-border-hi);
+  background: rgba(20, 20, 26, 0.55);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.14) inset, 0 -1px 0 rgba(255, 255, 255, 0.03) inset, 0 24px 50px -18px rgba(0, 0, 0, 0.7);
+  overflow: hidden;
+}
+.tabbar::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 8%;
+  right: 8%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.6), transparent);
+}
+.tab-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  color: var(--text-2);
+  cursor: pointer;
+  padding: 8px 4px;
+  border-radius: 14px;
+  position: relative;
+  transition: color .25s;
+}
+.tab-btn i {
+  font-size: 18px;
+  transition: transform .3s var(--ease);
+}
+.tab-btn span {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: .02em;
+}
+.tab-btn.active {
+  color: #fff;
+}
+.tab-btn.active i {
+  transform: translateY(-2px);
+}
+.tab-btn .tab-glow {
+  position: absolute;
+  inset: 2px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  opacity: 0;
+  transition: opacity .3s var(--ease);
+  z-index: -1;
+}
+.tab-btn.active .tab-glow {
+  opacity: 1;
+}
+
+/* ================= AR CANVAS VIEW ================= */
+.ar-view {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: #000;
+  display: none;
+  flex-direction: column;
+}
+.ar-view.active {
+  display: flex;
+}
+.ar-stage {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+  background: #000;
+}
+#arVideo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+#refImage {
+  position: absolute;
+  pointer-events: none;
+  opacity: 0.5;
+  transform-origin: center center;
+  max-width: none;
+}
+#drawCanvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+.ar-topbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: max(14px, env(safe-area-inset-top)) 14px 10px;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.65), transparent);
+}
+.ar-title-input {
+  background: transparent;
+  border: none;
+  color: #fff;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 15px;
+  text-align: center;
+  max-width: 180px;
+}
+.ar-camera-error {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--text-1);
+  text-align: center;
+  padding: 30px;
+  z-index: 2;
+}
+.ar-camera-error i {
+  font-size: 36px;
+  color: var(--danger);
+}
+
+.ar-toolbar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 5;
+  padding: 12px 12px max(14px, env(safe-area-inset-bottom));
+  background: linear-gradient(0deg, rgba(0, 0, 0, 0.7), transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ar-tool-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+}
+.ar-tool-row::-webkit-scrollbar {
+  display: none;
+}
+.ar-tool-btn {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  cursor: pointer;
+  transition: all .2s var(--ease);
+  backdrop-filter: blur(10px);
+}
+.ar-tool-btn.active {
+  background: linear-gradient(135deg, var(--accent), var(--pink));
+  border-color: transparent;
+}
+.ar-tool-btn:active {
+  transform: scale(.88);
+}
+.ar-tool-btn:disabled {
+  opacity: .35;
+  cursor: default;
+}
+.color-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.5);
+}
+.ar-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #fff;
+  font-size: 11px;
+  font-family: var(--font-mono);
+}
+.ar-slider-row input[type=range] {
+  flex: 1;
+  accent-color: var(--accent-hi);
+}
+.ar-panel {
+  display: none;
+  border-radius: 16px;
+  padding: 14px;
+  gap: 12px;
+  flex-direction: column;
+  background: rgba(20, 20, 26, 0.7);
+  border: 1px solid var(--glass-border-hi);
+  backdrop-filter: blur(20px);
+}
+.ar-panel.open {
+  display: flex;
+  animation: viewIn .3s var(--ease);
+}
+.swatch-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.swatch-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  cursor: pointer;
+  transition: transform .2s;
+}
+.swatch-btn.selected {
+  border-color: #fff;
+  transform: scale(1.15);
+}
+
+/* ================= MODALS / DIALOGS ================= */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: none;
+  align-items: flex-end;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
+  justify-content: center;
+}
+.modal-overlay.open {
+  display: flex;
+  animation: fadeIn .25s var(--ease);
+}
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.modal-sheet {
+  width: 100%;
+  max-width: 560px;
+  border-radius: 26px 26px 0 0;
+  padding: 10px 22px max(24px, env(safe-area-inset-bottom));
+  transform: translateY(30px);
+  animation: sheetUp .35s var(--ease) forwards;
+  background: rgba(18, 18, 24, 0.85);
+  backdrop-filter: blur(26px) saturate(160%);
+  border: 1px solid var(--glass-border-hi);
+  border-bottom: none;
+}
+@keyframes sheetUp {
+  to {
+    transform: none;
+  }
+}
+.modal-handle {
+  width: 36px;
+  height: 4px;
+  border-radius: 3px;
+  background: var(--glass-border-hi);
+  margin: 10px auto 16px;
+}
+.modal-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  margin-bottom: 14px;
+}
+.modal-icon.warn {
+  background: var(--danger-soft);
+  color: #ffb3c0;
+}
+.modal-icon.info {
+  background: var(--accent-soft);
+  color: var(--accent-hi);
+}
+.modal-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 18px;
+  margin: 0 0 8px;
+}
+.modal-body {
+  font-size: 13.5px;
+  color: var(--text-1);
+  line-height: 1.55;
+  margin-bottom: 18px;
+}
+.modal-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+  cursor: pointer;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--glass-border);
+}
+.modal-checkbox-row input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent-hi);
+  flex-shrink: 0;
+}
+.modal-checkbox-row span {
+  font-size: 12.5px;
+  color: var(--text-1);
+}
+.modal-actions {
+  display: flex;
+  gap: 10px;
+}
+.modal-actions .btn {
+  flex: 1;
+}
+.modal-field {
+  margin-bottom: 14px;
+}
+.modal-field label {
+  font-size: 12px;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  display: block;
+  margin-bottom: 6px;
+}
+.modal-field input[type=text],
+.modal-field input[type=password] {
+  width: 100%;
+  padding: 13px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--glass-border);
+  background: rgba(255, 255, 255, 0.04);
+  color: #fff;
+  font-size: 14.5px;
+}
+.modal-field input:focus {
+  border-color: var(--accent-hi);
+}
+
+/* ================= LOCK SCREEN ================= */
+.lock-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(1000px 700px at 50% -10%, rgba(108, 92, 231, 0.25), transparent 60%), var(--bg-0);
+  padding: 30px;
+  text-align: center;
+  gap: 6px;
+}
+.lock-screen.open {
+  display: flex;
+}
+.lock-icon {
+  width: 74px;
+  height: 74px;
+  border-radius: 20px;
+  margin-bottom: 18px;
+  background: linear-gradient(135deg, var(--accent), var(--pink));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  color: #fff;
+  box-shadow: 0 20px 40px -12px rgba(108, 92, 231, 0.6);
+  overflow: hidden;
+}
+.lock-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.lock-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 20px;
+  margin-bottom: 6px;
+}
+.lock-sub {
+  color: var(--text-2);
+  font-size: 13px;
+  margin-bottom: 26px;
+}
+.lock-input-wrap {
+  width: 100%;
+  max-width: 280px;
+  position: relative;
+  margin-bottom: 14px;
+}
+.lock-input-wrap input {
+  width: 100%;
+  padding: 15px 44px 15px 16px;
+  border-radius: 14px;
+  border: 1px solid var(--glass-border);
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+  font-size: 16px;
+  letter-spacing: .1em;
+  text-align: center;
+}
+.lock-input-wrap input:focus {
+  border-color: var(--accent-hi);
+}
+.lock-error {
+  color: var(--danger);
+  font-size: 12.5px;
+  height: 16px;
+  margin-bottom: 10px;
+}
+.shake {
+  animation: shakeAnim .4s;
+}
+@keyframes shakeAnim {
+  10%,
+  90% {
+    transform: translateX(-2px);
+  }
+  20%,
+  80% {
+    transform: translateX(4px);
+  }
+  30%,
+  50%,
+  70% {
+    transform: translateX(-8px);
+  }
+  40%,
+  60% {
+    transform: translateX(8px);
+  }
+}
+
+/* toast */
+.toast-wrap {
+  position: fixed;
+  top: max(14px, env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 900;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  max-width: 520px;
+  padding: 0 16px;
+}
+.toast {
+  padding: 12px 16px;
+  border-radius: 14px;
+  font-size: 13px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(24, 24, 30, 0.85);
+  border: 1px solid var(--glass-border-hi);
+  backdrop-filter: blur(16px);
+  animation: toastIn .3s var(--ease);
+  box-shadow: 0 12px 30px -10px rgba(0, 0, 0, 0.6);
+  width: 100%;
+  max-width: 360px;
+}
+@keyframes toastIn {
+  from {
+    opacity: 0;
+    transform: translateY(-14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.toast i {
+  color: var(--accent-hi);
+}
+.toast.success i {
+  color: var(--lime);
+}
+.toast.error i {
+  color: var(--danger);
+}
+
+/* onboarding */
+.onboard-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 600;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(5, 5, 8, 0.7);
+  backdrop-filter: blur(6px);
+}
+.onboard-overlay.open {
+  display: flex;
+  animation: fadeIn .3s var(--ease);
+}
+.onboard-card {
+  max-width: 380px;
+  width: 100%;
+  border-radius: var(--radius-l);
+  padding: 28px 24px;
+  text-align: center;
+}
+.onboard-icon {
+  font-size: 34px;
+  color: var(--accent-hi);
+  margin-bottom: 16px;
+}
+.onboard-steps {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  margin: 20px 0;
+}
+.onboard-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--glass-border-hi);
+  transition: all .3s;
+}
+.onboard-dot.active {
+  width: 18px;
+  background: var(--accent-hi);
+}
+
+.no-scroll {
+  overflow: hidden;
+}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ================= TOP APP BAR ================= -->
+  <header class="topbar">
+    <div class="brand">
+      <!-- Logo: uses the PWA icon placeholder as specified in the prompt -->
+      <div class="brand-mark">
+        <img src="https://iili.io/ChOD9vs.png" alt="SketchIT Logo" loading="eager" onerror="this.style.display='none';this.parentElement.innerHTML='<i class=\'fa-solid fa-compass-drafting\' style=\'font-size:15px;color:#fff;\'></i>';">
+      </div>
+      <div class="brand-text">
+        <span class="name">SketchIT</span>
+        <span class="tag">Trace Anything</span>
+      </div>
+    </div>
+    <button class="icon-btn spin" id="settingsShortcut" aria-label="Open settings">
+      <i class="fa-solid fa-gear"></i>
+    </button>
+  </header>
+
+  <!-- ================= CONTENT ================= -->
+  <main class="content">
+
+    <!-- ---------- HOME VIEW ---------- -->
+    <section class="view active" id="view-home">
+      <div class="hero-card glass">
+        <div class="hero-eyebrow">// live overlay</div>
+        <h1 class="hero-title">Trace the world<br>in front of you.</h1>
+        <p class="hero-sub">Point your camera at any surface, drop in a reference, and draw directly on top of reality.</p>
+        <button class="btn btn-primary" id="btnCreateProject">
+          <i class="fa-solid fa-plus"></i> Create new project
+        </button>
+      </div>
+
+      <div class="dropzone" id="dropzone">
+        <i class="fa-regular fa-image"></i>
+        <div class="dz-title">Drop a reference image here</div>
+        <div class="dz-sub">or tap to browse — JPG or PNG</div>
+        <input type="file" id="fileInput" accept="image/png, image/jpeg">
+        <div class="dz-preview" id="dzPreview" style="display:none;"></div>
+      </div>
+
+      <div class="section-eyebrow" id="homeRecentLabel" style="display:none;">recent projects</div>
+      <div id="homeRecentList"></div>
+    </section>
+
+    <!-- ---------- PROJECTS VIEW ---------- -->
+    <section class="view" id="view-projects">
+      <div class="section-eyebrow">all projects</div>
+      <div id="projectsSkeleton"></div>
+      <div id="projectsList"></div>
+      <div class="empty-state" id="projectsEmpty" style="display:none;">
+        <i class="fa-regular fa-folder-open"></i>
+        <div class="es-title">No projects yet</div>
+        <div class="es-sub">Create your first trace to see it here.</div>
+      </div>
+    </section>
+
+    <!-- ---------- SETTINGS VIEW ---------- -->
+    <section class="view" id="view-settings">
+      <div class="section-eyebrow">security</div>
+      <div class="settings-group glass">
+        <div class="settings-row" id="rowLockApp">
+          <div class="settings-row-left">
+            <div class="settings-icon"><i class="fa-solid fa-lock"></i></div>
+            <div>
+              <div class="settings-row-title">Lock app</div>
+              <div class="settings-row-sub">Require a password to open SketchIT</div>
+            </div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="lockToggle">
+            <span class="track"><span class="thumb"></span></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="section-eyebrow">appearance</div>
+      <div class="settings-group glass">
+        <div class="settings-row" id="rowTheme">
+          <div class="settings-row-left">
+            <div class="settings-icon"><i class="fa-solid fa-circle-half-stroke"></i></div>
+            <div>
+              <div class="settings-row-title">Light mode</div>
+              <div class="settings-row-sub">Switch between dark and light glass</div>
+            </div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="themeToggle">
+            <span class="track"><span class="thumb"></span></span>
+          </label>
+        </div>
+        <div class="settings-row" id="rowOnboarding">
+          <div class="settings-row-left">
+            <div class="settings-icon"><i class="fa-solid fa-hand-sparkles"></i></div>
+            <div>
+              <div class="settings-row-title">Replay tour</div>
+              <div class="settings-row-sub">See the quick intro again</div>
+            </div>
+          </div>
+          <i class="fa-solid fa-chevron-right project-chevron"></i>
+        </div>
+      </div>
+
+      <div class="section-eyebrow">data</div>
+      <div class="settings-group glass">
+        <div class="settings-row" id="rowClearData">
+          <div class="settings-row-left">
+            <div class="settings-icon" style="background: var(--danger-soft); color:#ffb3c0;"><i class="fa-solid fa-trash-can"></i></div>
+            <div>
+              <div class="settings-row-title">Clear all data</div>
+              <div class="settings-row-sub">Delete every project and reset settings</div>
+            </div>
+          </div>
+          <i class="fa-solid fa-chevron-right project-chevron"></i>
+        </div>
+      </div>
+
+      <div class="about-block">
+        created and developed by:<br>
+        <a href="https://websolutionsza.github.io/websolutionsSA/" target="_blank" rel="noopener" id="aboutLink">Websolutionssa</a>
+      </div>
+    </section>
+  </main>
+
+  <!-- ================= BOTTOM TAB BAR ================= -->
+  <div class="tabbar-wrap">
+    <nav class="tabbar glass" id="tabbar">
+      <button class="tab-btn active" data-view="home"><span class="tab-glow"></span><i class="fa-solid fa-house"></i><span>Home</span></button>
+      <button class="tab-btn" data-view="projects"><span class="tab-glow"></span><i class="fa-solid fa-layer-group"></i><span>Projects</span></button>
+      <button class="tab-btn" data-view="settings"><span class="tab-glow"></span><i class="fa-solid fa-gear"></i><span>Settings</span></button>
+    </nav>
+  </div>
+</div>
+
+<!-- ================= AR DRAWING CANVAS VIEW ================= -->
+<div class="ar-view" id="arView">
+  <div class="ar-stage" id="arStage">
+    <video id="arVideo" autoplay playsinline muted></video>
+    <img id="refImage" alt="">
+    <canvas id="drawCanvas"></canvas>
+    <div class="ar-camera-error" id="arCameraError" style="display:none;">
+      <i class="fa-solid fa-video-slash"></i>
+      <div><strong>Camera unavailable</strong><br>Grant camera access in your browser settings, or continue drawing without the live feed.</div>
+      <button class="btn btn-ghost btn-sm" id="btnRetryCamera"><i class="fa-solid fa-rotate"></i> Try again</button>
+    </div>
+  </div>
+
+  <div class="ar-topbar">
+    <button class="icon-btn" id="btnExitAr" aria-label="Close project"><i class="fa-solid fa-xmark"></i></button>
+    <input class="ar-title-input" id="arProjectTitle" value="Untitled Trace" maxlength="40">
+    <button class="icon-btn" id="btnSaveProject" aria-label="Save project"><i class="fa-solid fa-floppy-disk"></i></button>
+  </div>
+
+  <div class="ar-toolbar">
+    <div class="ar-panel" id="panelColor">
+      <div class="swatch-row" id="colorSwatches"></div>
+      <div class="ar-slider-row">
+        <i class="fa-solid fa-pen" style="font-size:11px;"></i>
+        <input type="range" id="sizeSlider" min="1" max="40" value="4">
+        <span id="sizeVal" style="width:26px;">4px</span>
+      </div>
+    </div>
+
+    <div class="ar-panel" id="panelProjection">
+      <div class="ar-slider-row"><i class="fa-solid fa-magnifying-glass" style="font-size:11px;"></i><input type="range" id="scaleSlider" min="20" max="300" value="100"><span id="scaleVal" style="width:40px;">100%</span></div>
+      <div class="ar-slider-row"><i class="fa-solid fa-rotate" style="font-size:11px;"></i><input type="range" id="rotationSlider" min="0" max="360" value="0"><span id="rotationVal" style="width:40px;">0°</span></div>
+      <div class="ar-slider-row"><i class="fa-solid fa-arrows-left-right" style="font-size:11px;"></i><input type="range" id="offsetXSlider" min="-200" max="200" value="0"><span id="offsetXVal" style="width:40px;">0</span></div>
+      <div class="ar-slider-row"><i class="fa-solid fa-arrows-up-down" style="font-size:11px;"></i><input type="range" id="offsetYSlider" min="-200" max="200" value="0"><span id="offsetYVal" style="width:40px;">0</span></div>
+      <div class="ar-slider-row"><i class="fa-regular fa-eye" style="font-size:11px;"></i><span style="flex:1;">Show reference layer</span>
+        <label class="switch" style="transform:scale(.75); transform-origin:right center;">
+          <input type="checkbox" id="refVisibleToggle" checked>
+          <span class="track"><span class="thumb"></span></span>
+        </label>
+      </div>
+    </div>
+
+    <div class="ar-tool-row" id="arToolRow">
+      <button class="ar-tool-btn active" data-tool="pen" title="Pen"><i class="fa-solid fa-pen"></i></button>
+      <button class="ar-tool-btn" data-tool="eraser" title="Eraser"><i class="fa-solid fa-eraser"></i></button>
+      <button class="ar-tool-btn" id="btnColorPanel" title="Color &amp; size"><span class="color-swatch" id="activeColorSwatch" style="background:#6c5ce7;"></span></button>
+      <button class="ar-tool-btn" id="btnUndo" title="Undo" disabled><i class="fa-solid fa-rotate-left"></i></button>
+      <button class="ar-tool-btn" id="btnRedo" title="Redo" disabled><i class="fa-solid fa-rotate-right"></i></button>
+      <button class="ar-tool-btn" id="btnProjectionPanel" title="Projection tracking"><i class="fa-solid fa-vector-square"></i></button>
+      <button class="ar-tool-btn" id="btnClearCanvas" title="Clear drawing"><i class="fa-solid fa-broom"></i></button>
+      <button class="ar-tool-btn" id="btnUploadRef" title="Upload reference"><i class="fa-regular fa-image"></i></button>
+      <input type="file" id="arFileInput" accept="image/png, image/jpeg" style="display:none;">
+    </div>
+  </div>
+</div>
+
+<!-- ================= LOCK SCREEN ================= -->
+<div class="lock-screen" id="lockScreen">
+  <!-- Lock screen also uses the PWA logo -->
+  <div class="lock-icon">
+    <img src="https://iili.io/ChOD9vs.png" alt="SketchIT Logo" onerror="this.style.display='none';this.parentElement.innerHTML='<i class=\'fa-solid fa-lock\' style=\'font-size:28px;color:#fff;\'></i>';">
+  </div>
+  <div class="lock-title">SketchIT is locked</div>
+  <div class="lock-sub">Enter your password to continue</div>
+  <div class="lock-input-wrap">
+    <input type="password" id="lockInput" placeholder="Password" autocomplete="off">
+  </div>
+  <div class="lock-error" id="lockError"></div>
+  <button class="btn btn-primary" id="btnUnlock">Unlock <i class="fa-solid fa-arrow-right"></i></button>
+</div>
+
+<!-- ================= MODALS ================= -->
+
+<!-- Create Project -->
+<div class="modal-overlay" id="modalCreate">
+  <div class="modal-sheet glass">
+    <div class="modal-handle"></div>
+    <div class="modal-icon info"><i class="fa-solid fa-plus"></i></div>
+    <h3 class="modal-title">Name your project</h3>
+    <div class="modal-field">
+      <label>Project name</label>
+      <input type="text" id="newProjectName" placeholder="e.g. Mural Sketch 01" maxlength="40">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" data-close="modalCreate">Cancel</button>
+      <button class="btn btn-primary" id="btnConfirmCreate">Start tracing <i class="fa-solid fa-arrow-right"></i></button>
+    </div>
+  </div>
+</div>
+
+<!-- Delete confirm step 1 -->
+<div class="modal-overlay" id="modalDelete1">
+  <div class="modal-sheet glass">
+    <div class="modal-handle"></div>
+    <div class="modal-icon warn"><i class="fa-solid fa-trash-can"></i></div>
+    <h3 class="modal-title">Delete this project?</h3>
+    <p class="modal-body">This will remove <strong id="delProjectName1">this project</strong> from your Projects list.</p>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="btnDelete1No">No</button>
+      <button class="btn btn-danger" id="btnDelete1Yes">Yes</button>
+    </div>
+  </div>
+</div>
+
+<!-- Delete confirm step 2 -->
+<div class="modal-overlay" id="modalDelete2">
+  <div class="modal-sheet glass">
+    <div class="modal-handle"></div>
+    <div class="modal-icon warn"><i class="fa-solid fa-triangle-exclamation"></i></div>
+    <h3 class="modal-title">This can't be undone</h3>
+    <p class="modal-body">If you delete <strong id="delProjectName2">this project</strong>, there is no way of recovering it. Do you wish to continue?</p>
+    <label class="modal-checkbox-row">
+      <input type="checkbox" id="dontShowAgainCheckbox">
+      <span>Don't show me this again</span>
+    </label>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="btnDelete2No">No</button>
+      <button class="btn btn-danger" id="btnDelete2Yes">Yes, delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- Set password modal -->
+<div class="modal-overlay" id="modalSetPassword">
+  <div class="modal-sheet glass">
+    <div class="modal-handle"></div>
+    <div class="modal-icon info"><i class="fa-solid fa-key"></i></div>
+    <h3 class="modal-title">Set a password</h3>
+    <div class="modal-field">
+      <label>Enter password</label>
+      <input type="password" id="pwField1" autocomplete="new-password">
+    </div>
+    <div class="modal-field">
+      <label>Confirm password</label>
+      <input type="password" id="pwField2" autocomplete="new-password">
+    </div>
+    <div class="lock-error" id="pwError" style="text-align:left; margin-bottom:10px;"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" data-close="modalSetPassword" id="btnCancelSetPw">Cancel</button>
+      <button class="btn btn-primary" id="btnSavePassword">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Clear data confirm -->
+<div class="modal-overlay" id="modalClearData">
+  <div class="modal-sheet glass">
+    <div class="modal-handle"></div>
+    <div class="modal-icon warn"><i class="fa-solid fa-eraser"></i></div>
+    <h3 class="modal-title">Clear all data?</h3>
+    <p class="modal-body">This deletes every project, your password, and preferences. This can't be undone.</p>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" data-close="modalClearData">Cancel</button>
+      <button class="btn btn-danger" id="btnConfirmClearData">Clear everything</button>
+    </div>
+  </div>
+</div>
+
+<!-- Onboarding -->
+<div class="onboard-overlay" id="onboardOverlay">
+  <div class="onboard-card glass" id="onboardCard">
+    <!-- filled by JS -->
+  </div>
+</div>
+
+<div class="toast-wrap" id="toastWrap"></div>
+
+<script>
+(() => {
+  "use strict";
+
+  /* ======================================================================
+     0. PWA — manifest + service worker (inlined, no external files needed)
+     Uses the placeholder PWA icon from the prompt spec.
+     ====================================================================== */
+  const PWA_ICON_URL = "https://iili.io/ChOD9vs.png";
+
+  const manifest = {
+    name: "da Vinci Eye",
+    short_name: "dVE",
+    start_url: ".",
+    display: "standalone",
+    background_color: "#0a0a0a",
+    theme_color: "#6c5ce7",
+    icons: [
+      { src: PWA_ICON_URL, sizes: "192x192", type: "image/png" },
+      { src: PWA_ICON_URL, sizes: "512x512", type: "image/png" }
+    ]
+  };
+  const manifestBlob = new Blob([JSON.stringify(manifest)], { type: "application/json" });
+  document.getElementById("manifestLink").href = URL.createObjectURL(manifestBlob);
+
+  // Minimal service worker, registered from an inline blob (works without extra files)
+  if ("serviceWorker" in navigator) {
+    const swCode = `
+      const CACHE = 'sketchit-v1';
+      self.addEventListener('install', e => { self.skipWaiting(); });
+      self.addEventListener('activate', e => { self.clients.claim(); });
+      self.addEventListener('fetch', e => {
+        e.respondWith(
+          caches.open(CACHE).then(cache =>
+            cache.match(e.request).then(resp => resp || fetch(e.request).then(networkResp => {
+              if (e.request.method === 'GET' && networkResp.status === 200) {
+                cache.put(e.request, networkResp.clone());
+              }
+              return networkResp;
+            }).catch(() => resp))
+          )
+        );
+      });
+    `;
+    const swBlob = new Blob([swCode], { type: "application/javascript" });
+    const swUrl = URL.createObjectURL(swBlob);
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register(swUrl).catch(() => { /* offline registration best-effort */ });
+    });
+  }
+
+  /* ======================================================================
+     1. Utilities
+     ====================================================================== */
+  const $ = (sel, root = document) => root.querySelector(sel);
+  const $all = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+  const uid = () => `p_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+
+  function showToast(message, type = "info", icon = "fa-solid fa-circle-info") {
+    const wrap = $("#toastWrap");
+    const el = document.createElement("div");
+    el.className = `toast glass ${type}`;
+    const iconClass = type === "success" ? "fa-solid fa-circle-check" : type === "error" ?
+      "fa-solid fa-circle-exclamation" : icon;
+    el.innerHTML = `<i class="${iconClass}"></i><span>${message}</span>`;
+    wrap.appendChild(el);
+    setTimeout(() => {
+      el.style.transition = "opacity .3s, transform .3s";
+      el.style.opacity = "0";
+      el.style.transform = "translateY(-10px)";
+      setTimeout(() => el.remove(), 320);
+    }, 2600);
+  }
+
+  function openModal(id) {
+    $(`#${id}`).classList.add("open");
+    document.body.classList.add("no-scroll");
+  }
+
+  function closeModal(id) {
+    $(`#${id}`).classList.remove("open");
+    document.body.classList.remove("no-scroll");
+  }
+
+  async function sha256(text) {
+    const enc = new TextEncoder().encode(text);
+    const buf = await crypto.subtle.digest("SHA-256", enc);
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
+  }
+
+  /* ======================================================================
+     2. IndexedDB layer
+     ====================================================================== */
+  const DB_NAME = "sketchit_db";
+  const DB_VERSION = 1;
+  let dbInstance = null;
+
+  function openDB() {
+    return new Promise((resolve, reject) => {
+      if (dbInstance) return resolve(dbInstance);
+      const req = indexedDB.open(DB_NAME, DB_VERSION);
+      req.onupgradeneeded = (e) => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains("projects")) {
+          db.createObjectStore("projects", { keyPath: "id" });
+        }
+        if (!db.objectStoreNames.contains("settings")) {
+          db.createObjectStore("settings", { keyPath: "key" });
+        }
+      };
+      req.onsuccess = (e) => { dbInstance = e.target.result;
+        resolve(dbInstance); };
+      req.onerror = (e) => reject(e.target.error);
+    });
+  }
+
+  async function dbGetAll(storeName) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(storeName, "readonly");
+      const store = tx.objectStore(storeName);
+      const req = store.getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = (e) => reject(e.target.error);
+    });
+  }
+
+  async function dbGet(storeName, key) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(storeName, "readonly");
+      const req = tx.objectStore(storeName).get(key);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = (e) => reject(e.target.error);
+    });
+  }
+
+  async function dbPut(storeName, value) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(storeName, "readwrite");
+      tx.objectStore(storeName).put(value);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = (e) => reject(e.target.error);
+    });
+  }
+
+  async function dbDelete(storeName, key) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(storeName, "readwrite");
+      tx.objectStore(storeName).delete(key);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = (e) => reject(e.target.error);
+    });
+  }
+
+  async function dbClearAll() {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(["projects", "settings"], "readwrite");
+      tx.objectStore("projects").clear();
+      tx.objectStore("settings").clear();
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = (e) => reject(e.target.error);
+    });
+  }
+
+  /* Settings helpers (fallback to localStorage if IDB unavailable) */
+  async function getSetting(key, fallback = null) {
+    try {
+      const row = await dbGet("settings", key);
+      return row ? row.value : fallback;
+    } catch {
+      const raw = localStorage.getItem(`sketchit_${key}`);
+      return raw !== null ? JSON.parse(raw) : fallback;
+    }
+  }
+  async function setSetting(key, value) {
+    try {
+      await dbPut("settings", { key, value });
+    } catch {
+      localStorage.setItem(`sketchit_${key}`, JSON.stringify(value));
+    }
+  }
+
+  /* ======================================================================
+     3. App State
+     ====================================================================== */
+  const state = {
+    currentView: "home",
+    projects: [],
+    skipSecondDeleteWarning: false,
+    pendingDeleteId: null,
+    refImageDataUrl: null, // staged from home dropzone for next new project
+    editingProjectId: null,
+    ar: {
+      tool: "pen",
+      color: "#6c5ce7",
+      size: 4,
+      strokes: [], // committed strokes: {tool,color,size,points:[{x,y}]}
+      redoStack: [],
+      currentStroke: null,
+      projection: { scale: 100, rotation: 0, offsetX: 0, offsetY: 0 },
+      refVisible: true,
+      stream: null,
+    }
+  };
+
+  const COLOR_PALETTE = ["#6c5ce7", "#ff7edb", "#b6ff6c", "#ff5470", "#ffffff", "#3ad0ff", "#ffb347"];
+
+  /* ======================================================================
+     4. Navigation / Tabs
+     ====================================================================== */
+  function switchView(name) {
+    state.currentView = name;
+    $all(".view").forEach(v => v.classList.remove("active"));
+    $(`#view-${name}`).classList.add("active");
+    $all(".tab-btn").forEach(btn => btn.classList.toggle("active", btn.dataset.view === name));
+    if (name === "projects") renderProjectsView();
+    if (name === "home") renderHomeRecent();
+  }
+
+  $all(".tab-btn").forEach(btn => btn.addEventListener("click", () => switchView(btn.dataset.view)));
+  $("#settingsShortcut").addEventListener("click", () => switchView("settings"));
+
+  /* ======================================================================
+     5. Home view: dropzone + create project
+     ====================================================================== */
+  const dropzone = $("#dropzone");
+  const fileInput = $("#fileInput");
+  const dzPreview = $("#dzPreview");
+
+  dropzone.addEventListener("click", (e) => {
+    if (e.target === fileInput) return;
+    fileInput.click();
+  });
+  ["dragenter", "dragover"].forEach(evt =>
+    dropzone.addEventListener(evt, (e) => { e.preventDefault();
+      dropzone.classList.add("drag-over"); })
+  );
+  ["dragleave", "drop"].forEach(evt =>
+    dropzone.addEventListener(evt, (e) => { e.preventDefault();
+      dropzone.classList.remove("drag-over"); })
+  );
+  dropzone.addEventListener("drop", (e) => {
+    const file = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (file) handleReferenceFile(file);
+  });
+  fileInput.addEventListener("change", () => {
+    if (fileInput.files[0]) handleReferenceFile(fileInput.files[0]);
+  });
+
+  function handleReferenceFile(file) {
+    if (!/^image\/(png|jpeg)$/.test(file.type)) {
+      showToast("Please choose a JPG or PNG image.", "error");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      state.refImageDataUrl = reader.result;
+      dzPreview.style.display = "flex";
+      dzPreview.innerHTML = `
+        <img src="${reader.result}" alt="Reference preview">
+        <div>
+          <div class="dz-file-name">${file.name}</div>
+          <div style="font-size:11px;color:var(--text-2);">Will attach to your next new project</div>
+        </div>`;
+      showToast("Reference image staged for your next project", "success");
+    };
+    reader.readAsDataURL(file);
+  }
+
+  $("#btnCreateProject").addEventListener("click", () => {
+    $("#newProjectName").value = "";
+    openModal("modalCreate");
+    setTimeout(() => $("#newProjectName").focus(), 250);
+  });
+
+  $("#btnConfirmCreate").addEventListener("click", async () => {
+    const name = $("#newProjectName").value.trim() || "Untitled Trace";
+    closeModal("modalCreate");
+    const project = {
+      id: uid(),
+      name,
+      created: Date.now(),
+      lastModified: Date.now(),
+      drawingData: { strokes: [] },
+      projectionSettings: { scale: 100, rotation: 0, offsetX: 0, offsetY: 0 },
+      thumbnail: null,
+      referenceImage: state.refImageDataUrl || null
+    };
+    await dbPut("projects", project);
+    state.refImageDataUrl = null;
+    dzPreview.style.display = "none";
+    await loadProjects();
+    openArCanvas(project.id);
+  });
+
+  /* ======================================================================
+     6. Skeleton loading + Projects list rendering
+     ====================================================================== */
+  function renderSkeletons(container, count = 3) {
+    container.innerHTML = "";
+    for (let i = 0; i < count; i++) {
+      const el = document.createElement("div");
+      el.className = "skeleton-card glass";
+      el.innerHTML = `
+        <div class="sk-block sk-thumb"></div>
+        <div class="sk-lines">
+          <div class="sk-block sk-line w60"></div>
+          <div class="sk-block sk-line w35"></div>
+        </div>`;
+      container.appendChild(el);
+    }
+  }
+
+  function formatDate(ts) {
+    const d = new Date(ts);
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  }
+
+  // Empty thumbnail placeholder as specified in the prompt
+  const THUMB_PLACEHOLDER = "https://iili.io/ChOb3Hg.png";
+
+  async function loadProjects() {
+    state.projects = await dbGetAll("projects");
+    state.projects.sort((a, b) => b.lastModified - a.lastModified);
+  }
+
+  function projectCardHtml(project) {
+    const thumb = project.thumbnail || THUMB_PLACEHOLDER;
+    return `
+      <div class="project-card-wrap" data-id="${project.id}">
+        <div class="swipe-action"><i class="fa-solid fa-trash-can"></i></div>
+        <div class="project-card glass" tabindex="0">
+          <img class="project-thumb" src="${thumb}" alt="" loading="lazy" onerror="this.src='${THUMB_PLACEHOLDER}';">
+          <div class="project-info">
+            <p class="project-name">${escapeHtml(project.name)}</p>
+            <p class="project-meta">edited ${formatDate(project.lastModified)}</p>
+          </div>
+          <i class="fa-solid fa-chevron-right project-chevron"></i>
+        </div>
+      </div>`;
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement("div");
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  async function renderProjectsView() {
+    const skeletonEl = $("#projectsSkeleton");
+    const listEl = $("#projectsList");
+    const emptyEl = $("#projectsEmpty");
+    listEl.innerHTML = "";
+    emptyEl.style.display = "none";
+    skeletonEl.style.display = "block";
+    renderSkeletons(skeletonEl, 3);
+
+    await loadProjects();
+    await new Promise(r => setTimeout(r, 420)); // let skeleton breathe briefly
+
+    skeletonEl.style.display = "none";
+    skeletonEl.innerHTML = "";
+
+    if (state.projects.length === 0) {
+      emptyEl.style.display = "block";
+      return;
+    }
+    listEl.innerHTML = state.projects.map(projectCardHtml).join("");
+    attachSwipeHandlers();
+  }
+
+  async function renderHomeRecent() {
+    await loadProjects();
+    const label = $("#homeRecentLabel");
+    const list = $("#homeRecentList");
+    const recent = state.projects.slice(0, 3);
+    if (recent.length === 0) {
+      label.style.display = "none";
+      list.innerHTML = "";
+      return;
+    }
+    label.style.display = "flex";
+    list.innerHTML = recent.map(projectCardHtml).join("");
+    attachSwipeHandlers(list);
+  }
+
+  /* ---------- swipe-to-delete (touch + mouse) ---------- */
+  function attachSwipeHandlers(root = document) {
+    $all(".project-card-wrap", root).forEach(wrap => {
+      if (wrap.dataset.bound) return;
+      wrap.dataset.bound = "1";
+      const card = $(".project-card", wrap);
+      let startX = 0,
+        currentX = 0,
+        dragging = false;
+      const threshold = -90;
+
+      function pointerDown(x) { dragging = true;
+        startX = x;
+        card.style.transition = "none"; }
+
+      function pointerMove(x) {
+        if (!dragging) return;
+        currentX = Math.min(0, x - startX);
+        card.style.transform = `translateX(${currentX}px)`;
+      }
+
+      function pointerUp() {
+        if (!dragging) return;
+        dragging = false;
+        card.style.transition = "transform .28s var(--ease)";
+        if (currentX < threshold) {
+          card.style.transform = `translateX(-100%)`;
+          setTimeout(() => beginDeleteFlow(wrap.dataset.id, wrap), 180);
+        } else {
+          card.style.transform = "translateX(0)";
+        }
+        currentX = 0;
+      }
+
+      card.addEventListener("touchstart", (e) => pointerDown(e.touches[0].clientX), { passive: true });
+      card.addEventListener("touchmove", (e) => pointerMove(e.touches[0].clientX), { passive: true });
+      card.addEventListener("touchend", pointerUp);
+
+      let mouseDown = false;
+      card.addEventListener("mousedown", (e) => { mouseDown = true;
+        pointerDown(e.clientX); });
+      window.addEventListener("mousemove", (e) => { if (mouseDown) pointerMove(e.clientX); });
+      window.addEventListener("mouseup", () => { if (mouseDown) { mouseDown = false;
+          pointerUp(); } });
+
+      card.addEventListener("click", (e) => {
+        if (Math.abs(currentX) > 4) return; // was a swipe, not a tap
+        openArCanvas(wrap.dataset.id);
+      });
+    });
+  }
+
+  /* ---------- two-step delete confirmation ---------- */
+  async function beginDeleteFlow(projectId, wrapEl) {
+    state.pendingDeleteId = projectId;
+    const project = state.projects.find(p => p.id === projectId) || await dbGet("projects", projectId);
+    const name = project ? project.name : "this project";
+    $("#delProjectName1").textContent = name;
+    $("#delProjectName2").textContent = name;
+    state._pendingWrapEl = wrapEl;
+
+    state.skipSecondDeleteWarning = await getSetting("skipSecondDeleteWarning", false);
+    openModal("modalDelete1");
+  }
+
+  $("#btnDelete1No").addEventListener("click", () => {
+    closeModal("modalDelete1");
+    resetSwipedCard();
+  });
+  $("#btnDelete1Yes").addEventListener("click", async () => {
+    closeModal("modalDelete1");
+    if (state.skipSecondDeleteWarning) {
+      await performDelete(state.pendingDeleteId);
+    } else {
+      $("#dontShowAgainCheckbox").checked = false;
+      openModal("modalDelete2");
+    }
+  });
+  $("#btnDelete2No").addEventListener("click", () => {
+    closeModal("modalDelete2");
+    resetSwipedCard();
+  });
+  $("#btnDelete2Yes").addEventListener("click", async () => {
+    const skip = $("#dontShowAgainCheckbox").checked;
+    await setSetting("skipSecondDeleteWarning", skip);
+    closeModal("modalDelete2");
+    await performDelete(state.pendingDeleteId);
+  });
+
+  function resetSwipedCard() {
+    if (state._pendingWrapEl) {
+      const card = $(".project-card", state._pendingWrapEl);
+      if (card) card.style.transform = "translateX(0)";
+    }
+    state.pendingDeleteId = null;
+  }
+
+  async function performDelete(projectId) {
+    await dbDelete("projects", projectId);
+    showToast("Project deleted", "success");
+    state.pendingDeleteId = null;
+    if (state.currentView === "projects") await renderProjectsView();
+    else await renderHomeRecent();
+  }
+
+  /* ======================================================================
+     7. Settings view
+     ====================================================================== */
+  $("#rowClearData").addEventListener("click", () => openModal("modalClearData"));
+  $("#btnConfirmClearData").addEventListener("click", async () => {
+    await dbClearAll();
+    localStorage.clear();
+    closeModal("modalClearData");
+    showToast("All data cleared", "success");
+    $("#lockToggle").checked = false;
+    await renderProjectsView();
+    await renderHomeRecent();
+    switchView("home");
+  });
+
+  $all("[data-close]").forEach(btn =>
+    btn.addEventListener("click", () => closeModal(btn.dataset.close))
+  );
+  $all(".modal-overlay").forEach(overlay =>
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.classList.remove(
+        "open"); })
+  );
+
+  /* theme toggle (light/dark) */
+  $("#themeToggle").addEventListener("change", async (e) => {
+    document.documentElement.classList.toggle("light-theme", e.target.checked);
+    await setSetting("lightTheme", e.target.checked);
+    applyLightTheme(e.target.checked);
+  });
+
+  function applyLightTheme(on) {
+    if (on) {
+      document.body.style.background =
+        "radial-gradient(1200px 600px at 15% -10%, rgba(108,92,231,0.10), transparent 60%), #f4f2f9";
+      document.documentElement.style.setProperty("--text-0", "#1c1a24");
+      document.documentElement.style.setProperty("--text-1", "#4a4658");
+      document.documentElement.style.setProperty("--text-2", "#7a7690");
+      document.documentElement.style.setProperty("--glass-fill", "rgba(20,16,40,0.045)");
+      document.documentElement.style.setProperty("--glass-fill-strong", "rgba(20,16,40,0.09)");
+      document.documentElement.style.setProperty("--glass-border", "rgba(20,16,40,0.10)");
+      document.documentElement.style.setProperty("--glass-border-hi", "rgba(20,16,40,0.18)");
+    } else {
+      document.body.style.background =
+        "radial-gradient(1200px 600px at 15% -10%, rgba(108,92,231,0.16), transparent 60%), radial-gradient(900px 500px at 110% 10%, rgba(255,126,219,0.08), transparent 55%), var(--bg-0)";
+      document.documentElement.style.setProperty("--text-0", "#f4f3f7");
+      document.documentElement.style.setProperty("--text-1", "#b9b6c6");
+      document.documentElement.style.setProperty("--text-2", "#7c7889");
+      document.documentElement.style.setProperty("--glass-fill", "rgba(255,255,255,0.055)");
+      document.documentElement.style.setProperty("--glass-fill-strong", "rgba(255,255,255,0.09)");
+      document.documentElement.style.setProperty("--glass-border", "rgba(255,255,255,0.11)");
+      document.documentElement.style.setProperty("--glass-border-hi", "rgba(255,255,255,0.22)");
+    }
+  }
+
+  $("#rowOnboarding").addEventListener("click", () => startOnboarding(true));
+
+  /* ---------- Lock app toggle ---------- */
+  $("#lockToggle").addEventListener("change", async (e) => {
+    if (e.target.checked) {
+      $("#pwField1").value = "";
+      $("#pwField2").value = "";
+      $("#pwError").textContent = "";
+      openModal("modalSetPassword");
+    } else {
+      await setSetting("passwordHash", null);
+      await setSetting("lockEnabled", false);
+      showToast("App lock disabled", "success");
+    }
+  });
+  $("#btnCancelSetPw").addEventListener("click", () => { $("#lockToggle").checked = false; });
+
+  $("#btnSavePassword").addEventListener("click", async () => {
+    const pw1 = $("#pwField1").value;
+    const pw2 = $("#pwField2").value;
+    if (pw1.length < 4) { $("#pwError").textContent = "Password must be at least 4 characters.";
+      return; }
+    if (pw1 !== pw2) { $("#pwError").textContent = "Passwords do not match.";
+      return; }
+    const hash = await sha256(pw1);
+    await setSetting("passwordHash", hash);
+    await setSetting("lockEnabled", true);
+    closeModal("modalSetPassword");
+    showToast("App lock enabled", "success");
+  });
+
+  /* ======================================================================
+     8. Lock screen logic
+     ====================================================================== */
+  async function checkLockOnLaunch() {
+    const enabled = await getSetting("lockEnabled", false);
+    const hash = await getSetting("passwordHash", null);
+    if (enabled && hash) {
+      $("#lockScreen").classList.add("open");
+      setTimeout(() => $("#lockInput").focus(), 300);
+    }
+  }
+  $("#btnUnlock").addEventListener("click", attemptUnlock);
+  $("#lockInput").addEventListener("keydown", (e) => { if (e.key === "Enter") attemptUnlock(); });
+
+  async function attemptUnlock() {
+    const pw = $("#lockInput").value;
+    const storedHash = await getSetting("passwordHash", null);
+    const hash = await sha256(pw);
+    if (hash === storedHash) {
+      $("#lockScreen").classList.remove("open");
+      $("#lockInput").value = "";
+      $("#lockError").textContent = "";
+    } else {
+      $("#lockError").textContent = "Incorrect password. Try again.";
+      const wrap = $(".lock-input-wrap");
+      wrap.classList.remove("shake");
+      void wrap.offsetWidth;
+      wrap.classList.add("shake");
+    }
+  }
+
+  /* idle re-lock after 3 minutes */
+  let idleTimer = null;
+
+  function resetIdleTimer() {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(async () => {
+      const enabled = await getSetting("lockEnabled", false);
+      if (enabled) { $("#lockScreen").classList.add("open");
+        setTimeout(() => $("#lockInput").focus(), 200); }
+    }, 3 * 60 * 1000);
+  }
+  ["click", "touchstart", "keydown", "mousemove"].forEach(evt =>
+    window.addEventListener(evt, resetIdleTimer, { passive: true })
+  );
+
+  /* ======================================================================
+     9. AR Drawing Canvas
+     ====================================================================== */
+  const arVideo = $("#arVideo");
+  const drawCanvas = $("#drawCanvas");
+  const dctx = drawCanvas.getContext("2d");
+  const refImageEl = $("#refImage");
+  const arStage = $("#arStage");
+
+  function resizeCanvas() {
+    const rect = arStage.getBoundingClientRect();
+    drawCanvas.width = rect.width * devicePixelRatio;
+    drawCanvas.height = rect.height * devicePixelRatio;
+    drawCanvas.style.width = rect.width + "px";
+    drawCanvas.style.height = rect.height + "px";
+    dctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+    redrawCanvas();
+  }
+  window.addEventListener("resize", () => { if ($("#arView").classList.contains("active")) resizeCanvas(); });
+
+  function redrawCanvas() {
+    const rect = arStage.getBoundingClientRect();
+    dctx.clearRect(0, 0, rect.width, rect.height);
+    state.ar.strokes.forEach(drawStroke);
+  }
+
+  function drawStroke(stroke) {
+    if (stroke.points.length < 1) return;
+    dctx.lineJoin = "round";
+    dctx.lineCap = "round";
+    dctx.globalCompositeOperation = stroke.tool === "eraser" ? "destination-out" : "source-over";
+    dctx.strokeStyle = stroke.color;
+    dctx.lineWidth = stroke.size;
+    dctx.beginPath();
+    stroke.points.forEach((pt, i) => {
+      if (i === 0) dctx.moveTo(pt.x, pt.y);
+      else dctx.lineTo(pt.x, pt.y);
+    });
+    dctx.stroke();
+  }
+
+  function getPos(e) {
+    const rect = drawCanvas.getBoundingClientRect();
+    const point = e.touches ? e.touches[0] : e;
+    return { x: point.clientX - rect.left, y: point.clientY - rect.top };
+  }
+
+  let isDrawing = false;
+
+  function startDraw(e) {
+    e.preventDefault();
+    isDrawing = true;
+    const pos = getPos(e);
+    state.ar.currentStroke = { tool: state.ar.tool, color: state.ar.color, size: state.ar.size,
+      points: [pos] };
+  }
+
+  function moveDraw(e) {
+    if (!isDrawing) return;
+    e.preventDefault();
+    const pos = getPos(e);
+    state.ar.currentStroke.points.push(pos);
+    redrawCanvas();
+    drawStroke(state.ar.currentStroke);
+  }
+
+  function endDraw() {
+    if (!isDrawing) return;
+    isDrawing = false;
+    if (state.ar.currentStroke && state.ar.currentStroke.points.length > 1) {
+      state.ar.strokes.push(state.ar.currentStroke);
+      state.ar.redoStack = [];
+      updateUndoRedoButtons();
+    }
+    state.ar.currentStroke = null;
+  }
+  drawCanvas.addEventListener("mousedown", startDraw);
+  drawCanvas.addEventListener("mousemove", moveDraw);
+  window.addEventListener("mouseup", endDraw);
+  drawCanvas.addEventListener("touchstart", startDraw, { passive: false });
+  drawCanvas.addEventListener("touchmove", moveDraw, { passive: false });
+  drawCanvas.addEventListener("touchend", endDraw);
+
+  function updateUndoRedoButtons() {
+    $("#btnUndo").disabled = state.ar.strokes.length === 0;
+    $("#btnRedo").disabled = state.ar.redoStack.length === 0;
+  }
+  $("#btnUndo").addEventListener("click", () => {
+    if (state.ar.strokes.length === 0) return;
+    state.ar.redoStack.push(state.ar.strokes.pop());
+    redrawCanvas();
+    updateUndoRedoButtons();
+  });
+  $("#btnRedo").addEventListener("click", () => {
+    if (state.ar.redoStack.length === 0) return;
+    state.ar.strokes.push(state.ar.redoStack.pop());
+    redrawCanvas();
+    updateUndoRedoButtons();
+  });
+  $("#btnClearCanvas").addEventListener("click", () => {
+    if (state.ar.strokes.length === 0) return;
+    state.ar.redoStack = [];
+    state.ar.strokes = [];
+    redrawCanvas();
+    updateUndoRedoButtons();
+    showToast("Canvas cleared", "info");
+  });
+
+  /* ---------- tool selection ---------- */
+  $all("[data-tool]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      state.ar.tool = btn.dataset.tool;
+      $all("[data-tool]").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      closeArPanels();
+    });
+  });
+
+  /* ---------- color & size panel ---------- */
+  const colorSwatchesEl = $("#colorSwatches");
+  COLOR_PALETTE.forEach(color => {
+    const b = document.createElement("button");
+    b.className = "swatch-btn" + (color === state.ar.color ? " selected" : "");
+    b.style.background = color;
+    b.addEventListener("click", () => {
+      state.ar.color = color;
+      $("#activeColorSwatch").style.background = color;
+      $all(".swatch-btn", colorSwatchesEl).forEach(s => s.classList.remove("selected"));
+      b.classList.add("selected");
+    });
+    colorSwatchesEl.appendChild(b);
+  });
+  $("#sizeSlider").addEventListener("input", (e) => {
+    state.ar.size = Number(e.target.value);
+    $("#sizeVal").textContent = state.ar.size + "px";
+  });
+
+  function closeArPanels() { $all(".ar-panel").forEach(p => p.classList.remove("open")); }
+  $("#btnColorPanel").addEventListener("click", () => togglePanel("panelColor"));
+  $("#btnProjectionPanel").addEventListener("click", () => togglePanel("panelProjection"));
+
+  function togglePanel(id) {
+    const el = $(`#${id}`);
+    const wasOpen = el.classList.contains("open");
+    closeArPanels();
+    if (!wasOpen) el.classList.add("open");
+  }
+
+  /* ---------- projection tracking sliders ---------- */
+  function applyProjectionTransform() {
+    const p = state.ar.projection;
+    refImageEl.style.transform =
+      `translate(calc(-50% + ${p.offsetX}px), calc(-50% + ${p.offsetY}px)) scale(${p.scale / 100}) rotate(${p.rotation}deg)`;
+  }
+
+  function bindProjectionSlider(sliderId, valId, key, unit) {
+    const slider = $(`#${sliderId}`);
+    slider.addEventListener("input", (e) => {
+      state.ar.projection[key] = Number(e.target.value);
+      $(`#${valId}`).textContent = e.target.value + unit;
+      applyProjectionTransform();
+    });
+  }
+  bindProjectionSlider("scaleSlider", "scaleVal", "scale", "%");
+  bindProjectionSlider("rotationSlider", "rotationVal", "rotation", "°");
+  bindProjectionSlider("offsetXSlider", "offsetXVal", "offsetX", "");
+  bindProjectionSlider("offsetYSlider", "offsetYVal", "offsetY", "");
+  $("#refVisibleToggle").addEventListener("change", (e) => {
+    state.ar.refVisible = e.target.checked;
+    refImageEl.style.display = e.target.checked ? "block" : "none";
+  });
+
+  /* ---------- reference image upload inside AR view ---------- */
+  $("#btnUploadRef").addEventListener("click", () => $("#arFileInput").click());
+  $("#arFileInput").addEventListener("change", () => {
+    const file = $("#arFileInput").files[0];
+    if (!file) return;
+    if (!/^image\/(png|jpeg)$/.test(file.type)) { showToast("Please choose a JPG or PNG image.", "error");
+      return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      refImageEl.src = reader.result;
+      refImageEl.style.display = state.ar.refVisible ? "block" : "none";
+      $("#panelProjection").classList.add("open");
+      showToast("Reference layer added", "success");
+    };
+    reader.readAsDataURL(file);
+  });
+
+  /* ---------- camera ---------- */
+  async function startCamera() {
+    $("#arCameraError").style.display = "none";
+    try {
+      if (state.ar.stream) { state.ar.stream.getTracks().forEach(t => t.stop()); }
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment" },
+        audio: false
+      });
+      state.ar.stream = stream;
+      arVideo.srcObject = stream;
+      arVideo.style.display = "block";
+    } catch (err) {
+      arVideo.style.display = "none";
+      $("#arCameraError").style.display = "flex";
+    }
+  }
+
+  function stopCamera() {
+    if (state.ar.stream) { state.ar.stream.getTracks().forEach(t => t.stop());
+      state.ar.stream = null; }
+  }
+  $("#btnRetryCamera").addEventListener("click", startCamera);
+
+  /* ---------- open / close AR view ---------- */
+  async function openArCanvas(projectId) {
+    const project = await dbGet("projects", projectId);
+    if (!project) { showToast("Project not found", "error");
+      return; }
+    state.editingProjectId = projectId;
+
+    $("#arProjectTitle").value = project.name;
+    state.ar.strokes = (project.drawingData && project.drawingData.strokes) ? JSON.parse(JSON.stringify(project
+      .drawingData.strokes)) : [];
+    state.ar.redoStack = [];
+    state.ar.projection = Object.assign({ scale: 100, rotation: 0, offsetX: 0, offsetY: 0 }, project
+      .projectionSettings || {});
+    state.ar.refVisible = true;
+
+    $("#scaleSlider").value = state.ar.projection.scale;
+    $("#scaleVal").textContent = state.ar.projection.scale + "%";
+    $("#rotationSlider").value = state.ar.projection.rotation;
+    $("#rotationVal").textContent = state.ar.projection.rotation + "°";
+    $("#offsetXSlider").value = state.ar.projection.offsetX;
+    $("#offsetXVal").textContent = state.ar.projection.offsetX;
+    $("#offsetYSlider").value = state.ar.projection.offsetY;
+    $("#offsetYVal").textContent = state.ar.projection.offsetY;
+    $("#refVisibleToggle").checked = true;
+
+    if (project.referenceImage) {
+      refImageEl.src = project.referenceImage;
+      refImageEl.style.display = "block";
+    } else {
+      refImageEl.removeAttribute("src");
+      refImageEl.style.display = "none";
+    }
+    applyProjectionTransform();
+    closeArPanels();
+    updateUndoRedoButtons();
+
+    $("#arView").classList.add("active");
+    document.body.classList.add("no-scroll");
+    await startCamera();
+    requestAnimationFrame(resizeCanvas);
+  }
+
+  $("#btnExitAr").addEventListener("click", async () => {
+    await saveCurrentProject(false);
+    closeArCanvas();
+  });
+
+  function closeArCanvas() {
+    stopCamera();
+    $("#arView").classList.remove("active");
+    document.body.classList.remove("no-scroll");
+    state.editingProjectId = null;
+    renderHomeRecent();
+    if (state.currentView === "projects") renderProjectsView();
+  }
+
+  function generateThumbnail() {
+    const off = document.createElement("canvas");
+    off.width = 160;
+    off.height = 160;
+    const octx = off.getContext("2d");
+    octx.fillStyle = "#131319";
+    octx.fillRect(0, 0, 160, 160);
+    const rect = arStage.getBoundingClientRect();
+    const scaleX = 160 / rect.width,
+      scaleY = 160 / rect.height;
+    octx.save();
+    octx.scale(scaleX, scaleY);
+    state.ar.strokes.forEach(stroke => {
+      if (stroke.points.length < 1) return;
+      octx.lineJoin = "round";
+      octx.lineCap = "round";
+      octx.globalCompositeOperation = stroke.tool === "eraser" ? "destination-out" : "source-over";
+      octx.strokeStyle = stroke.color;
+      octx.lineWidth = stroke.size;
+      octx.beginPath();
+      stroke.points.forEach((pt, i) => { if (i === 0) octx.moveTo(pt.x, pt.y);
+        else octx.lineTo(pt.x, pt.y); });
+      octx.stroke();
+    });
+    octx.restore();
+    return off.toDataURL("image/png");
+  }
+
+  async function saveCurrentProject(showFeedback = true) {
+    if (!state.editingProjectId) return;
+    const project = await dbGet("projects", state.editingProjectId);
+    if (!project) return;
+    project.name = $("#arProjectTitle").value.trim() || "Untitled Trace";
+    project.lastModified = Date.now();
+    project.drawingData = { strokes: state.ar.strokes };
+    project.projectionSettings = { ...state.ar.projection };
+    project.thumbnail = generateThumbnail();
+    if (refImageEl.getAttribute("src")) project.referenceImage = refImageEl.src;
+    await dbPut("projects", project);
+    if (showFeedback) showToast("Project saved", "success");
+  }
+  $("#btnSaveProject").addEventListener("click", () => saveCurrentProject(true));
+
+  /* ======================================================================
+     10. Onboarding tour
+     ====================================================================== */
+  const onboardSteps = [
+    { icon: "fa-solid fa-compass-drafting", title: "Welcome to SketchIT",
+      body: "Trace anything in the world using your camera as a live overlay." },
+    { icon: "fa-solid fa-layer-group", title: "Save every trace",
+      body: "Projects are stored right on this device, with a thumbnail and timestamp." },
+    { icon: "fa-solid fa-vector-square", title: "Line it up",
+      body: "Use projection tracking to scale, rotate, and position your reference perfectly." },
+  ];
+  let onboardIndex = 0;
+
+  function renderOnboardStep() {
+    const step = onboardSteps[onboardIndex];
+    const card = $("#onboardCard");
+    card.innerHTML = `
+      <i class="onboard-icon ${step.icon}"></i>
+      <h3 class="modal-title">${step.title}</h3>
+      <p class="modal-body">${step.body}</p>
+      <div class="onboard-steps">
+        ${onboardSteps.map((_, i) => `<span class="onboard-dot ${i === onboardIndex ? "active" : ""}"></span>`).join("")}
+      </div>
+      <button class="btn btn-primary btn-block" id="btnOnboardNext">
+        ${onboardIndex === onboardSteps.length - 1 ? "Get started" : "Next"} <i class="fa-solid fa-arrow-right"></i>
+      </button>`;
+    $("#btnOnboardNext").addEventListener("click", () => {
+      if (onboardIndex === onboardSteps.length - 1) { finishOnboarding(); } else { onboardIndex++;
+        renderOnboardStep(); }
+    });
+  }
+
+  function startOnboarding(force = false) {
+    onboardIndex = 0;
+    renderOnboardStep();
+    $("#onboardOverlay").classList.add("open");
+  }
+  async function finishOnboarding() {
+    $("#onboardOverlay").classList.remove("open");
+    await setSetting("onboardingSeen", true);
+  }
+
+  /* ======================================================================
+     11. Init
+     ====================================================================== */
+  async function init() {
+    await checkLockOnLaunch();
+    resetIdleTimer();
+
+    const lockEnabled = await getSetting("lockEnabled", false);
+    $("#lockToggle").checked = !!lockEnabled;
+
+    const lightTheme = await getSetting("lightTheme", false);
+    $("#themeToggle").checked = !!lightTheme;
+    applyLightTheme(!!lightTheme);
+
+    state.skipSecondDeleteWarning = await getSetting("skipSecondDeleteWarning", false);
+
+    renderSkeletons($("#projectsSkeleton"), 3);
+    await renderHomeRecent();
+
+    const seenOnboarding = await getSetting("onboardingSeen", false);
+    if (!seenOnboarding) {
+      setTimeout(() => startOnboarding(), 500);
+    }
+  }
+  init();
+
+})();
+</script>
+</body>
+</html>
