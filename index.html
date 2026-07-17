@@ -8,7 +8,11 @@
 <meta name="description" content="SketchIT — AR drawing, projection tracking, and interactive creativity.">
 
 <!-- ================= PWA MANIFEST ================= -->
-<link rel="manifest" id="manifestLink">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#6c5ce7">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="apple-touch-icon" href="icon-192.png">
 
 <!-- ================= FONTS ================= -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -1511,50 +1515,18 @@ a {
 (() => {
   "use strict";
 
-  /* ======================================================================
-     0. PWA — manifest + service worker (inlined, no external files needed)
-     Uses the placeholder PWA icon from the prompt spec.
+ /* ======================================================================
+     0. PWA — Service Worker registration
      ====================================================================== */
-  const PWA_ICON_URL = "https://iili.io/ChOD9vs.png";
-
-  const manifest = {
-    name: "da Vinci Eye",
-    short_name: "dVE",
-    start_url: ".",
-    display: "standalone",
-    background_color: "#0a0a0a",
-    theme_color: "#6c5ce7",
-    icons: [
-      { src: PWA_ICON_URL, sizes: "192x192", type: "image/png" },
-      { src: PWA_ICON_URL, sizes: "512x512", type: "image/png" }
-    ]
-  };
-  const manifestBlob = new Blob([JSON.stringify(manifest)], { type: "application/json" });
-  document.getElementById("manifestLink").href = URL.createObjectURL(manifestBlob);
-
-  // Minimal service worker, registered from an inline blob (works without extra files)
   if ("serviceWorker" in navigator) {
-    const swCode = `
-      const CACHE = 'sketchit-v1';
-      self.addEventListener('install', e => { self.skipWaiting(); });
-      self.addEventListener('activate', e => { self.clients.claim(); });
-      self.addEventListener('fetch', e => {
-        e.respondWith(
-          caches.open(CACHE).then(cache =>
-            cache.match(e.request).then(resp => resp || fetch(e.request).then(networkResp => {
-              if (e.request.method === 'GET' && networkResp.status === 200) {
-                cache.put(e.request, networkResp.clone());
-              }
-              return networkResp;
-            }).catch(() => resp))
-          )
-        );
-      });
-    `;
-    const swBlob = new Blob([swCode], { type: "application/javascript" });
-    const swUrl = URL.createObjectURL(swBlob);
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register(swUrl).catch(() => { /* offline registration best-effort */ });
+      navigator.serviceWorker.register("sw.js")
+        .then(registration => {
+          console.log("Service Worker registered successfully");
+        })
+        .catch(error => {
+          console.log("Service Worker registration failed:", error);
+        });
     });
   }
 
